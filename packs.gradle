@@ -1,0 +1,309 @@
+// Generates inventory CustomModelData models + datapack recipes/loot.
+//
+// Compatibility target: Minecraft 1.19.4+ (BlockDisplay floor).
+//
+// Resource pack ships BOTH formats in one pack:
+//   - Legacy (1.19.4 – 1.21.3): assets/minecraft/models/item/*_slab.json + overrides
+//   - Modern  (1.21.4+):        assets/minecraft/items/*_slab.json + custom_model_data floats
+// Textures always reference vanilla minecraft:block/* (no extracted PNGs required).
+//
+// Run:  gradlew.bat generateAllPacks
+
+import groovy.json.JsonOutput
+
+ext.betterSlabsMaterials = [
+        'ACACIA_SLAB', 'ANDESITE_SLAB', 'BAMBOO_MOSAIC_SLAB', 'BAMBOO_SLAB', 'BIRCH_SLAB',
+        'BLACKSTONE_SLAB', 'BRICK_SLAB', 'CHERRY_SLAB', 'COBBLED_DEEPSLATE_SLAB', 'COBBLESTONE_SLAB',
+        'CRIMSON_SLAB', 'CUT_COPPER_SLAB', 'CUT_RED_SANDSTONE_SLAB', 'CUT_SANDSTONE_SLAB', 'DARK_OAK_SLAB',
+        'DARK_PRISMARINE_SLAB', 'DEEPSLATE_BRICK_SLAB', 'DEEPSLATE_TILE_SLAB', 'DIORITE_SLAB', 'END_STONE_BRICK_SLAB',
+        'EXPOSED_CUT_COPPER_SLAB', 'GRANITE_SLAB', 'JUNGLE_SLAB', 'MANGROVE_SLAB', 'MOSSY_COBBLESTONE_SLAB',
+        'MOSSY_STONE_BRICK_SLAB', 'MUD_BRICK_SLAB', 'NETHER_BRICK_SLAB', 'OAK_SLAB', 'OXIDIZED_CUT_COPPER_SLAB',
+        'PETRIFIED_OAK_SLAB', 'POLISHED_ANDESITE_SLAB', 'POLISHED_BLACKSTONE_BRICK_SLAB', 'POLISHED_BLACKSTONE_SLAB',
+        'POLISHED_DEEPSLATE_SLAB', 'POLISHED_DIORITE_SLAB', 'POLISHED_GRANITE_SLAB', 'POLISHED_TUFF_SLAB',
+        'PRISMARINE_BRICK_SLAB', 'PRISMARINE_SLAB', 'PURPUR_SLAB', 'QUARTZ_SLAB', 'RED_NETHER_BRICK_SLAB',
+        'RED_SANDSTONE_SLAB', 'SANDSTONE_SLAB', 'SMOOTH_QUARTZ_SLAB', 'SMOOTH_RED_SANDSTONE_SLAB',
+        'SMOOTH_SANDSTONE_SLAB', 'SMOOTH_STONE_SLAB', 'SPRUCE_SLAB', 'STONE_BRICK_SLAB', 'STONE_SLAB',
+        'TUFF_BRICK_SLAB', 'TUFF_SLAB', 'WARPED_SLAB', 'WAXED_CUT_COPPER_SLAB', 'WAXED_EXPOSED_CUT_COPPER_SLAB',
+        'WAXED_OXIDIZED_CUT_COPPER_SLAB', 'WAXED_WEATHERED_CUT_COPPER_SLAB', 'WEATHERED_CUT_COPPER_SLAB',
+]
+
+ext.betterSlabsCmdBase = 170000
+
+ext.betterSlabsTexture = { String name ->
+    String base = name.replace('_SLAB', '')
+    Map special = [
+            'OAK': 'oak_planks', 'SPRUCE': 'spruce_planks', 'BIRCH': 'birch_planks',
+            'JUNGLE': 'jungle_planks', 'ACACIA': 'acacia_planks', 'DARK_OAK': 'dark_oak_planks',
+            'MANGROVE': 'mangrove_planks', 'CHERRY': 'cherry_planks', 'BAMBOO': 'bamboo_planks',
+            'CRIMSON': 'crimson_planks', 'WARPED': 'warped_planks', 'PETRIFIED_OAK': 'oak_planks',
+            'BAMBOO_MOSAIC': 'bamboo_mosaic', 'STONE': 'stone', 'SMOOTH_STONE': 'smooth_stone',
+            'COBBLESTONE': 'cobblestone', 'MOSSY_COBBLESTONE': 'mossy_cobblestone',
+            'STONE_BRICK': 'stone_bricks', 'MOSSY_STONE_BRICK': 'mossy_stone_bricks',
+            'GRANITE': 'granite', 'POLISHED_GRANITE': 'polished_granite',
+            'DIORITE': 'diorite', 'POLISHED_DIORITE': 'polished_diorite',
+            'ANDESITE': 'andesite', 'POLISHED_ANDESITE': 'polished_andesite',
+            'BRICK': 'bricks', 'MUD_BRICK': 'mud_bricks',
+            'SANDSTONE': 'sandstone', 'CUT_SANDSTONE': 'cut_sandstone', 'SMOOTH_SANDSTONE': 'smooth_sandstone',
+            'RED_SANDSTONE': 'red_sandstone', 'CUT_RED_SANDSTONE': 'cut_red_sandstone',
+            'SMOOTH_RED_SANDSTONE': 'smooth_red_sandstone',
+            'PRISMARINE': 'prismarine', 'PRISMARINE_BRICK': 'prismarine_bricks',
+            'DARK_PRISMARINE': 'dark_prismarine',
+            'NETHER_BRICK': 'nether_bricks', 'RED_NETHER_BRICK': 'red_nether_bricks',
+            'QUARTZ': 'quartz_block_side', 'SMOOTH_QUARTZ': 'quartz_block_bottom',
+            'PURPUR': 'purpur_block', 'END_STONE_BRICK': 'end_stone_bricks',
+            'BLACKSTONE': 'blackstone', 'POLISHED_BLACKSTONE': 'polished_blackstone',
+            'POLISHED_BLACKSTONE_BRICK': 'polished_blackstone_bricks',
+            'COBBLED_DEEPSLATE': 'cobbled_deepslate', 'POLISHED_DEEPSLATE': 'polished_deepslate',
+            'DEEPSLATE_BRICK': 'deepslate_bricks', 'DEEPSLATE_TILE': 'deepslate_tiles',
+            'TUFF': 'tuff', 'POLISHED_TUFF': 'polished_tuff', 'TUFF_BRICK': 'tuff_bricks',
+            'CUT_COPPER': 'cut_copper', 'EXPOSED_CUT_COPPER': 'exposed_cut_copper',
+            'WEATHERED_CUT_COPPER': 'weathered_cut_copper', 'OXIDIZED_CUT_COPPER': 'oxidized_cut_copper',
+            'WAXED_CUT_COPPER': 'cut_copper', 'WAXED_EXPOSED_CUT_COPPER': 'exposed_cut_copper',
+            'WAXED_WEATHERED_CUT_COPPER': 'weathered_cut_copper', 'WAXED_OXIDIZED_CUT_COPPER': 'oxidized_cut_copper',
+    ]
+    return special.containsKey(base) ? special[base] : base.toLowerCase()
+}
+
+ext.betterSlabsPretty = { String name ->
+    name.toLowerCase().replace('_', ' ').split(' ').collect { it.capitalize() }.join(' ')
+}
+
+ext.betterSlabsStableCmds = {
+    int base = betterSlabsCmdBase
+    Map taken = [:]
+    Map result = [:]
+    betterSlabsMaterials.each { String name ->
+        int cmd = base + Math.floorMod(name.hashCode(), 50_000)
+        while (taken.containsKey(cmd) && taken[cmd] != name) {
+            cmd++
+        }
+        taken[cmd] = name
+        result[name] = cmd
+    }
+    return result
+}
+
+tasks.register("generateAllPacks") {
+    group = "better_slabs"
+    description = "Generate dual-format inventory CMD models + datapack recipes (1.19.4+)"
+
+    doLast {
+        Map cmds = betterSlabsStableCmds()
+        File root = project.projectDir
+        File rp = new File(root, "resourcepack")
+        File dp = new File(root, "datapack")
+
+        // Resource pack: support_formats spans 1.19.4 (12) through modern clients
+        new File(rp, "pack.mcmeta").text = JsonOutput.prettyPrint(JsonOutput.toJson([
+                pack: [
+                        pack_format      : 34,
+                        supported_formats: [12, 64],
+                        description      : "Better Slabs — inventory vertical models (legacy overrides + 1.21.4+ items). Vanilla textures. 1.19.4+"
+                ]
+        ])) + "\n"
+
+        // Datapack primary target 1.21; also declare supported range for loaders that honor it
+        new File(dp, "pack.mcmeta").text = JsonOutput.prettyPrint(JsonOutput.toJson([
+                pack: [
+                        pack_format      : 48,
+                        supported_formats: [15, 64],
+                        description      : "Better Slabs — vanilla vertical slabs (BlockDisplay). Prefer 1.20.2+; plugin from 1.19.4+"
+                ]
+        ])) + "\n"
+
+        File itemModels = new File(rp, "assets/better_slabs/models/item")
+        File mcModelsItem = new File(rp, "assets/minecraft/models/item")
+        File mcItemsDef = new File(rp, "assets/minecraft/items")
+        File recipes = new File(dp, "data/better_slabs/recipe")
+        File loot = new File(dp, "data/better_slabs/loot_table/items")
+        itemModels.mkdirs()
+        mcModelsItem.mkdirs()
+        mcItemsDef.mkdirs()
+        recipes.mkdirs()
+        loot.mkdirs()
+
+        File half = new File(rp, "assets/better_slabs/models/block/vertical_half.json")
+        half.parentFile.mkdirs()
+        half.text = JsonOutput.prettyPrint(JsonOutput.toJson([
+                credit  : "Better_Slabs",
+                textures: [particle: "#all", all: "minecraft:block/stone"],
+                elements: [[
+                                   from : [0, 0, 0], to: [16, 16, 8],
+                                   faces: [
+                                           north: [uv: [0, 0, 16, 16], texture: "#all"],
+                                           east : [uv: [0, 0, 8, 16], texture: "#all"],
+                                           south: [uv: [0, 0, 16, 16], texture: "#all"],
+                                           west : [uv: [8, 0, 16, 16], texture: "#all"],
+                                           up   : [uv: [0, 0, 16, 8], texture: "#all"],
+                                           down : [uv: [0, 8, 16, 16], texture: "#all"],
+                                   ]
+                           ]],
+                display : [
+                        gui                   : [rotation: [30, 225, 0], scale: [0.625, 0.625, 0.625]],
+                        ground                : [translation: [0, 3, 0], scale: [0.25, 0.25, 0.25]],
+                        fixed                 : [scale: [0.5, 0.5, 0.5]],
+                        thirdperson_righthand : [rotation: [75, 45, 0], translation: [0, 2.5, 0], scale: [0.375, 0.375, 0.375]],
+                        firstperson_righthand : [rotation: [0, 45, 0], scale: [0.4, 0.4, 0.4]],
+                ]
+        ])) + "\n"
+
+        cmds.each { String name, Integer cmd ->
+            String mid = name.toLowerCase()
+            String pretty = betterSlabsPretty(name)
+            String tex = "minecraft:block/" + betterSlabsTexture(name)
+            String modelId = "better_slabs:item/${mid}_vertical"
+
+            // Shared 3D model (vanilla texture ref only)
+            new File(itemModels, "${mid}_vertical.json").text = JsonOutput.prettyPrint(JsonOutput.toJson([
+                    credit  : "Better_Slabs",
+                    parent  : "better_slabs:block/vertical_half",
+                    textures: [all: tex, particle: tex]
+            ])) + "\n"
+
+            // --- LEGACY (1.19.4 – ~1.21.3): models/item + overrides ---
+            new File(mcModelsItem, "${mid}.json").text = JsonOutput.prettyPrint(JsonOutput.toJson([
+                    parent   : "minecraft:block/${mid}",
+                    overrides: [[
+                                        predicate: [custom_model_data: cmd],
+                                        model    : modelId
+                                ]]
+            ])) + "\n"
+
+            // --- MODERN (1.21.4+): items/*.json model selection by component ---
+            // Uses range_dispatch on custom_model_data floats so integer CMD still matches.
+            new File(mcItemsDef, "${mid}.json").text = JsonOutput.prettyPrint(JsonOutput.toJson([
+                    model: [
+                            type  : "minecraft:range_dispatch",
+                            property: "minecraft:custom_model_data",
+                            index : 0,
+                            entries: [[
+                                              threshold: cmd as double,
+                                              model    : [
+                                                      type : "minecraft:model",
+                                                      model: modelId
+                                              ]
+                                      ]],
+                            fallback: [
+                                    type : "minecraft:model",
+                                    model: "minecraft:item/${mid}"
+                            ]
+                    ]
+            ])) + "\n"
+
+            // Recipe: integer custom_model_data works on 1.20.5+ components; pre-1.20.5 datapack
+            // may ignore components field — plugin recipes use ItemMeta.setCustomModelData instead.
+            new File(recipes, "vertical_${mid}.json").text = JsonOutput.prettyPrint(JsonOutput.toJson([
+                    type    : "minecraft:crafting_shaped",
+                    category: "building",
+                    pattern : ["S", "S", "S"],
+                    key     : [S: "minecraft:${mid}"],
+                    result  : [
+                            id        : "minecraft:${mid}",
+                            count     : 6,
+                            components: [
+                                    "minecraft:custom_model_data": cmd,
+                                    "minecraft:custom_name"      : "{\"text\":\"Vertical ${pretty}\",\"italic\":false}",
+                                    "minecraft:custom_data"      : [better_slabs: [vertical: 1, slab: mid]],
+                                    "minecraft:lore"             : [
+                                            "{\"text\":\"Sneak + look at a block side to place\",\"color\":\"gray\",\"italic\":false}"
+                                    ]
+                            ]
+                    ]
+            ])) + "\n"
+
+            new File(loot, "plain_${mid}.json").text = JsonOutput.prettyPrint(JsonOutput.toJson([
+                    type : "minecraft:command",
+                    pools: [[
+                                    rolls  : 1,
+                                    entries: [[
+                                                      type     : "minecraft:item",
+                                                      name     : "minecraft:${mid}",
+                                                      functions: [[function: "minecraft:set_count", count: 1]]
+                                              ]]
+                            ]]
+            ])) + "\n"
+        }
+
+        new File(rp, "cmd_map.json").text = JsonOutput.prettyPrint(JsonOutput.toJson([
+                base              : betterSlabsCmdBase,
+                scheme            : "base + floorMod(java_String_hashCode(MATERIAL_NAME), 50000)",
+                min_minecraft     : "1.19.4",
+                dual_format       : [
+                        legacy: "assets/minecraft/models/item/*_slab.json overrides (predicate custom_model_data)",
+                        modern: "assets/minecraft/items/*_slab.json range_dispatch (1.21.4+)"
+                ],
+                note              : "Inventory only. World uses BlockDisplay + vanilla full-block textures (no PNGs extracted).",
+                materials         : betterSlabsMaterials,
+                cmd               : cmds
+        ])) + "\n"
+
+        new File(rp, "README.md").text = """# Better Slabs Resource Pack (1.19.4+)
+
+**Inventory icons only** for optional crafted vertical items.
+
+## Dual CustomModelData (one pack)
+
+| Client | Path | Mechanism |
+|--------|------|-----------|
+| 1.19.4 – 1.21.3 | `assets/minecraft/models/item/*_slab.json` | `overrides` + integer `custom_model_data` |
+| 1.21.4+ | `assets/minecraft/items/*_slab.json` | `range_dispatch` on `minecraft:custom_model_data` |
+
+Both are generated into the **same** pack. Textures are **vanilla** `minecraft:block/*` references — no custom PNGs, no jar extract required for inventory look.
+
+World vertical halves = BlockDisplay (plugin/datapack), not this pack.
+
+## Install
+
+```bat
+gradlew.bat generateAllPacks
+```
+
+Zip folder contents (`pack.mcmeta` at root) → enable in resource packs.
+
+Plugin side-place of plain slabs does **not** need this pack.
+"""
+
+        logger.lifecycle("Better Slabs packs: ${cmds.size()} slabs, dual CMD formats, CMD base ${betterSlabsCmdBase}")
+        logger.lifecycle("  OAK_SLAB CMD = ${cmds['OAK_SLAB']}")
+        logger.lifecycle("  STONE_SLAB CMD = ${cmds['STONE_SLAB']}")
+        logger.lifecycle("  Target: plugin 1.19.4+, resource pack dual format, datapack 1.20.2+/1.21 preferred")
+    }
+}
+
+tasks.register("generateResourcePack") {
+    group = "better_slabs"
+    dependsOn "generateAllPacks"
+}
+
+tasks.register("generateDatapackRecipes") {
+    group = "better_slabs"
+    dependsOn "generateAllPacks"
+}
+
+// Optional: list textures inside a client jar (verification only — inventory pack does not embed them)
+tasks.register("listClientJarSlabs") {
+    group = "better_slabs"
+    description = "List block textures related to slabs inside a client jar (optional check)"
+    doLast {
+        def jarProp = project.findProperty("clientJar")
+        File jar = jarProp ? file(jarProp as String) : null
+        if (jar == null || !jar.exists()) {
+            logger.lifecycle("Pass -PclientJar=path/to/version.jar  (textures are NOT copied; inventory models reference vanilla paths)")
+            return
+        }
+        def zf = new java.util.zip.ZipFile(jar)
+        try {
+            int n = 0
+            zf.entries().each { e ->
+                String name = e.name
+                if (name.startsWith("assets/minecraft/textures/block/") && name.endsWith(".png")) {
+                    if (n < 30) logger.lifecycle("  " + name)
+                    n++
+                }
+            }
+            logger.lifecycle("Found ${n} block textures in ${jar.name} (not extracted — resource pack uses path refs)")
+        } finally {
+            zf.close()
+        }
+    }
+}

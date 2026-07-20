@@ -1,0 +1,24 @@
+name: BetterSlab
+version: '${version}'
+main: org.little100.better_slabs.BetterSlabs
+api-version: '1.19'
+authors: [ Little_100 ]
+description: 你🐎的ojang, 比原版更好的半砖！
+website: www.little100.cn
+folia-supported: true
+commands:
+  betterslabs:
+    description: BetterSlab admin commands
+    usage: /betterslabs <reload|give|info>
+    aliases: [ bslabs, vslab, betterslab ]
+    permission: betterslabs.admin
+permissions:
+  betterslabs.admin:
+    description: Admin commands for BetterSlab
+    default: op
+  betterslabs.craft:
+    description: Allow crafting vertical slabs
+    default: true
+  betterslabs.place:
+    description: Allow placing vertical slabs
+    default: true

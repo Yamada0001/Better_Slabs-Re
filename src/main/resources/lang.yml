@@ -1,0 +1,25 @@
+# 物品相关
+item:
+  vertical-slab-lore:
+    - "§7状态: 竖半砖"
+    - "§8Shift+右键空气切换"
+
+# 挖掘相关
+dig:
+  title: "§6挖掘中"
+  subtitle: "§7{bar} {current}/{total}s ({percent}%)"
+  actionbar: "§6挖掘 {percent}%"
+
+# 命令相关
+command:
+  no-permission: "§c无权限"
+  reload-success: "§aBetter Slabs 已重载"
+  players-only: "§c仅玩家可用"
+  unknown-slab: "§c未知或不支持的半砖材质"
+  give-success: "§a已给予 {amount}x 竖半砖 {material}"
+  usage-main: "§e/betterslabs <reload|give|info>"
+  usage-give: "§e/betterslabs give <半砖材质> [数量]"
+  info-version: "§6Better Slabs §7v{version}"
+  info-slab-types: "§7半砖类型: §f{count}"
+  info-stored-cells: "§7存储格数: §f{count}"
+  info-folia: "§7Folia: §f{folia}"

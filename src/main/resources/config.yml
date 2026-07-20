@@ -1,0 +1,5 @@
+# 排除半砖
+# ignore-slabs:
+#   - STONE_SLAB
+#   - OAK_SLAB
+ignore-slabs:
