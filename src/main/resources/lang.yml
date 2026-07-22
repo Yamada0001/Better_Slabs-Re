@@ -9,6 +9,8 @@ dig:
   title: "§6挖掘中"
   subtitle: "§7{bar} {current}/{total}s ({percent}%)"
   actionbar: "§6挖掘 {percent}%"
+  bar-filled: "■"
+  bar-empty: "□"
 
 # 命令相关
 command:
@@ -17,6 +19,7 @@ command:
   players-only: "§c仅玩家可用"
   unknown-slab: "§c未知或不支持的半砖材质"
   give-success: "§a已给予 {amount}x 竖半砖 {material}"
+  give-invalid-amount: "§c数量必须为正整数"
   usage-main: "§e/betterslabs <reload|give|info>"
   usage-give: "§e/betterslabs give <半砖材质> [数量]"
   info-version: "§6Better Slabs §7v{version}"

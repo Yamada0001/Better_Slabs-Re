@@ -7,26 +7,22 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.persistence.PersistentDataType;
-import org.little100.better_slabs.BetterSlabs;
+import org.jetbrains.annotations.NotNull;
 import org.little100.better_slabs.util.Keys;
 
 public final class EntityProtectListener implements Listener {
 
-    // 防kill @杀
-    public EntityProtectListener(BetterSlabs plugin) {
+    public EntityProtectListener() {
     }
 
-    private boolean isOurs(Entity entity) {
-        if (entity == null) {
-            return false;
-        }
+    private boolean isOurs(@NotNull Entity entity) {
         var pdc = entity.getPersistentDataContainer();
         return pdc.has(Keys.DISPLAY_MARKER, PersistentDataType.BYTE)
                 || pdc.has(Keys.HEAD_MARKER, PersistentDataType.BYTE);
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
-    public void onDamage(EntityDamageEvent event) {
+    public void onDamage(@NotNull EntityDamageEvent event) {
         if (isOurs(event.getEntity())) {
             event.setCancelled(true);
             event.setDamage(0);
@@ -34,7 +30,7 @@ public final class EntityProtectListener implements Listener {
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
-    public void onDeath(EntityDeathEvent event) {
+    public void onDeath(@NotNull EntityDeathEvent event) {
         if (!isOurs(event.getEntity())) {
             return;
         }
@@ -42,6 +38,4 @@ public final class EntityProtectListener implements Listener {
         event.getDrops().clear();
         event.setDroppedExp(0);
     }
-
-    public void registerRemoveProtect() {}
 }

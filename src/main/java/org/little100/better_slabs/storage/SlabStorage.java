@@ -22,7 +22,6 @@ public final class SlabStorage {
     private final ConcurrentHashMap<String, VerticalSlabCell> cells = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Set<String>> chunkIndex = new ConcurrentHashMap<>();
     private final File dbFile;
-    private volatile Connection connection;
 
     public SlabStorage(BetterSlabs plugin) {
         this.plugin = plugin;
@@ -48,60 +47,68 @@ public final class SlabStorage {
         Class.forName("org.little100.better_slabs.lib.h2.Driver");
     }
 
+    /**
+     * 每次操作创建独立连接，由调用方通过 try-with-resources 管理生命周期，
+     * 确保连接被正确关闭，避免资源泄漏。
+     */
+    private Connection openConnection() throws SQLException {
+        return DriverManager.getConnection(jdbcUrl(), "sa", "");
+    }
+
     public void load() {
         cells.clear();
         chunkIndex.clear();
+        int loaded = 0;
         try {
             loadDriver();
-            connection = DriverManager.getConnection(jdbcUrl(), "sa", "");
-            try (Statement st = connection.createStatement()) {
-                st.execute("""
-                        CREATE TABLE IF NOT EXISTS vertical_cells (
-                          world_id VARCHAR(36) NOT NULL,
-                          x INT NOT NULL,
-                          y INT NOT NULL,
-                          z INT NOT NULL,
-                          half_index TINYINT NOT NULL,
-                          slab VARCHAR(64) NOT NULL,
-                          face VARCHAR(16) NOT NULL,
-                          PRIMARY KEY (world_id, x, y, z, half_index)
-                        )
-                        """);
-                st.execute("""
-                        CREATE INDEX IF NOT EXISTS idx_vcells_chunk
-                        ON vertical_cells (world_id, x, z)
-                        """);
-            }
-            int loaded = 0;
-            try (Statement st = connection.createStatement();
-                 ResultSet rs = st.executeQuery(
-                         "SELECT world_id, x, y, z, half_index, slab, face FROM vertical_cells ORDER BY world_id, x, y, z, half_index")) {
-                while (rs.next()) {
-                    UUID worldId;
-                    try {
-                        worldId = UUID.fromString(rs.getString("world_id"));
-                    } catch (IllegalArgumentException ex) {
-                        continue;
+            try (Connection conn = openConnection()) {
+                try (Statement st = conn.createStatement()) {
+                    st.execute("""
+                            CREATE TABLE IF NOT EXISTS vertical_cells (
+                              world_id VARCHAR(36) NOT NULL,
+                              x INT NOT NULL,
+                              y INT NOT NULL,
+                              z INT NOT NULL,
+                              half_index TINYINT NOT NULL,
+                              slab VARCHAR(64) NOT NULL,
+                              face VARCHAR(16) NOT NULL,
+                              PRIMARY KEY (world_id, x, y, z, half_index)
+                            )
+                            """);
+                    st.execute("""
+                            CREATE INDEX IF NOT EXISTS idx_vcells_chunk
+                            ON vertical_cells (world_id, x, z)
+                            """);
+                }
+                try (Statement st = conn.createStatement();
+                     ResultSet rs = st.executeQuery(
+                             "SELECT world_id, x, y, z, half_index, slab, face FROM vertical_cells ORDER BY world_id, x, y, z, half_index")) {
+                    while (rs.next()) {
+                        UUID worldId;
+                        try {
+                            worldId = UUID.fromString(rs.getString("world_id"));
+                        } catch (IllegalArgumentException ex) {
+                            continue;
+                        }
+                        int x = rs.getInt("x");
+                        int y = rs.getInt("y");
+                        int z = rs.getInt("z");
+                        Material slab = Material.matchMaterial(rs.getString("slab"));
+                        SlabFace face = SlabFace.fromString(rs.getString("face"));
+                        if (slab == null || face == null) {
+                            continue;
+                        }
+                        String key = worldId + ":" + x + ":" + y + ":" + z;
+                        VerticalSlabCell cell = cells.computeIfAbsent(key, k -> new VerticalSlabCell(worldId, x, y, z));
+                        cell.forceAddHalf(new VerticalHalf(slab, face));
+                        addToChunkIndex(worldId, x, z, key);
+                        loaded++;
                     }
-                    int x = rs.getInt("x");
-                    int y = rs.getInt("y");
-                    int z = rs.getInt("z");
-                    Material slab = Material.matchMaterial(rs.getString("slab"));
-                    SlabFace face = SlabFace.fromString(rs.getString("face"));
-                    if (slab == null || face == null) {
-                        continue;
-                    }
-                    String key = worldId + ":" + x + ":" + y + ":" + z;
-                    VerticalSlabCell cell = cells.computeIfAbsent(key, k -> new VerticalSlabCell(worldId, x, y, z));
-                    cell.forceAddHalf(new VerticalHalf(slab, face));
-                    addToChunkIndex(worldId, x, z, key);
-                    loaded++;
                 }
             }
             plugin.getLogger().info("H2 loaded " + cells.size() + " cells (" + loaded + " halves)");
         } catch (ClassNotFoundException | SQLException e) {
             plugin.getLogger().severe("Failed to open H2 database: " + e.getMessage());
-            e.printStackTrace();
         }
     }
 
@@ -121,62 +128,33 @@ public final class SlabStorage {
         }
     }
 
+    private static final String INSERT_SQL = "INSERT INTO vertical_cells (world_id, x, y, z, half_index, slab, face) VALUES (?,?,?,?,?,?,?)";
+
     public void save() {
-        Connection conn = connection;
-        if (conn == null) {
-            return;
-        }
-        try {
-            if (conn.isClosed()) {
-                plugin.getLogger().warning("H2 connection closed, attempting reconnect");
-                connection = DriverManager.getConnection(jdbcUrl(), "sa", "");
-                conn = connection;
-            }
-        } catch (SQLException e) {
-            plugin.getLogger().warning("H2 reconnect failed: " + e.getMessage());
-            return;
-        }
-        try {
-            synchronized (this) {
+        synchronized (this) {
+            try (Connection conn = openConnection()) {
                 conn.setAutoCommit(false);
                 try (Statement wipe = conn.createStatement()) {
                     wipe.execute("DELETE FROM vertical_cells");
                 }
-                String sql = "INSERT INTO vertical_cells (world_id, x, y, z, half_index, slab, face) VALUES (?,?,?,?,?,?,?)";
-                try (PreparedStatement ps = conn.prepareStatement(sql)) {
+                try (PreparedStatement ps = conn.prepareStatement(INSERT_SQL)) {
                     for (VerticalSlabCell cell : cells.values()) {
                         if (cell.isEmpty()) {
                             continue;
                         }
-                        int index = 0;
-                        for (VerticalHalf half : cell.getHalves()) {
-                            ps.setString(1, cell.getWorldId().toString());
-                            ps.setInt(2, cell.getX());
-                            ps.setInt(3, cell.getY());
-                            ps.setInt(4, cell.getZ());
-                            ps.setInt(5, index++);
-                            ps.setString(6, half.getSlabMaterial().name());
-                            ps.setString(7, half.getFace().name());
-                            ps.addBatch();
-                        }
+                        insertHalves(ps, cell.getWorldId(), cell.getX(), cell.getY(), cell.getZ(), cell.getHalves());
                     }
                     ps.executeBatch();
                 }
                 conn.commit();
-                conn.setAutoCommit(true);
-            }
-        } catch (SQLException e) {
-            plugin.getLogger().severe("Failed to save H2 database: " + e.getMessage());
-            try {
-                conn.rollback();
-                conn.setAutoCommit(true);
-            } catch (SQLException ignored) {
+            } catch (SQLException e) {
+                plugin.getLogger().severe("Failed to save H2 database: " + e.getMessage());
             }
         }
     }
 
     public void saveCell(VerticalSlabCell cell) {
-        if (connection == null || cell == null) {
+        if (cell == null) {
             return;
         }
         final UUID worldId = cell.getWorldId();
@@ -185,55 +163,42 @@ public final class SlabStorage {
         final int z = cell.getZ();
         final var halves = cell.getHalves();
         plugin.getScheduler().runAsync(() -> {
-            Connection conn = connection;
-            if (conn == null) {
-                return;
-            }
-            try {
-                synchronized (this) {
-                    deleteCellSync(worldId, x, y, z);
+            synchronized (this) {
+                try (Connection conn = openConnection()) {
+                    deleteCellSync(conn, worldId, x, y, z);
                     if (halves.isEmpty()) {
                         return;
                     }
-                    String sql = "INSERT INTO vertical_cells (world_id, x, y, z, half_index, slab, face) VALUES (?,?,?,?,?,?,?)";
-                    try (PreparedStatement ps = conn.prepareStatement(sql)) {
-                        int index = 0;
-                        for (VerticalHalf half : halves) {
-                            ps.setString(1, worldId.toString());
-                            ps.setInt(2, x);
-                            ps.setInt(3, y);
-                            ps.setInt(4, z);
-                            ps.setInt(5, index++);
-                            ps.setString(6, half.getSlabMaterial().name());
-                            ps.setString(7, half.getFace().name());
-                            ps.addBatch();
-                        }
+                    try (PreparedStatement ps = conn.prepareStatement(INSERT_SQL)) {
+                        insertHalves(ps, worldId, x, y, z, halves);
                         ps.executeBatch();
                     }
+                } catch (SQLException e) {
+                    plugin.getLogger().warning("H2 saveCell failed: " + e.getMessage());
                 }
-            } catch (SQLException e) {
-                plugin.getLogger().warning("H2 saveCell failed: " + e.getMessage());
             }
         });
     }
 
-    public void deleteCellAsync(UUID worldId, int x, int y, int z) {
-        plugin.getScheduler().runAsync(() -> {
-            try {
-                synchronized (this) {
-                    deleteCellSync(worldId, x, y, z);
-                }
-            } catch (SQLException e) {
-                plugin.getLogger().warning("H2 deleteCell failed: " + e.getMessage());
-            }
-        });
-    }
-
-    private void deleteCellSync(UUID worldId, int x, int y, int z) throws SQLException {
-        Connection conn = connection;
-        if (conn == null) {
-            return;
+    /**
+     * 提取公共的半砖插入逻辑，消除 save() 与 saveCell() 间的代码重复
+     */
+    private static void insertHalves(PreparedStatement ps, UUID worldId, int x, int y, int z,
+                                     List<VerticalHalf> halves) throws SQLException {
+        int index = 0;
+        for (VerticalHalf half : halves) {
+            ps.setString(1, worldId.toString());
+            ps.setInt(2, x);
+            ps.setInt(3, y);
+            ps.setInt(4, z);
+            ps.setInt(5, index++);
+            ps.setString(6, half.getSlabMaterial().name());
+            ps.setString(7, half.getFace().name());
+            ps.addBatch();
         }
+    }
+
+    private void deleteCellSync(Connection conn, UUID worldId, int x, int y, int z) throws SQLException {
         try (PreparedStatement ps = conn.prepareStatement(
                 "DELETE FROM vertical_cells WHERE world_id=? AND x=? AND y=? AND z=?")) {
             ps.setString(1, worldId.toString());
@@ -244,29 +209,24 @@ public final class SlabStorage {
         }
     }
 
-    public void saveAsync() {
-        plugin.getScheduler().runAsync(this::save);
+    public void deleteCellAsync(UUID worldId, int x, int y, int z) {
+        plugin.getScheduler().runAsync(() -> {
+            synchronized (this) {
+                try (Connection conn = openConnection()) {
+                    deleteCellSync(conn, worldId, x, y, z);
+                } catch (SQLException e) {
+                    plugin.getLogger().warning("H2 deleteCell failed: " + e.getMessage());
+                }
+            }
+        });
     }
 
     public void close() {
         save();
-        Connection conn = connection;
-        connection = null;
-        if (conn != null) {
-            try {
-                conn.close();
-            } catch (SQLException e) {
-                plugin.getLogger().warning("H2 close: " + e.getMessage());
-            }
-        }
     }
 
     public VerticalSlabCell get(String key) {
         return cells.get(key);
-    }
-
-    public VerticalSlabCell getOrCreate(VerticalSlabCell template) {
-        return cells.computeIfAbsent(template.key(), k -> template);
     }
 
     public void put(VerticalSlabCell cell) {

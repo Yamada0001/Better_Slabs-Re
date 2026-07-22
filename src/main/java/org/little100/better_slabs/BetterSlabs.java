@@ -25,8 +25,7 @@ import java.nio.charset.StandardCharsets;
 
 public final class BetterSlabs extends JavaPlugin {
 
-    private static BetterSlabs instance;
-
+    private final String version = getClass().getPackage().getImplementationVersion();
     private SlabRegistry slabRegistry;
     private SlabStorage slabStorage;
     private DisplayManager displayManager;
@@ -37,7 +36,6 @@ public final class BetterSlabs extends JavaPlugin {
 
     @Override
     public void onEnable() {
-        instance = this;
         saveDefaultConfig();
         loadLangConfig();
 
@@ -56,9 +54,7 @@ public final class BetterSlabs extends JavaPlugin {
         Bukkit.getPluginManager().registerEvents(new ChunkListener(this), this);
         Bukkit.getPluginManager().registerEvents(new WorldProtectListener(this), this);
         Bukkit.getPluginManager().registerEvents(new NeighborUpdateListener(this), this);
-        EntityProtectListener entityProtect = new EntityProtectListener(this);
-        Bukkit.getPluginManager().registerEvents(entityProtect, this);
-        entityProtect.registerRemoveProtect();
+        Bukkit.getPluginManager().registerEvents(new EntityProtectListener(), this);
 
         var command = getCommand("betterslabs");
         if (command != null) {
@@ -107,7 +103,6 @@ public final class BetterSlabs extends JavaPlugin {
         if (collisionManager != null) {
             collisionManager.clearBarriers();
         }
-        instance = null;
     }
 
     public void reloadPlugin() {
@@ -116,10 +111,6 @@ public final class BetterSlabs extends JavaPlugin {
         slabRegistry.scan();
         displayManager.despawnAll();
         displayManager.respawnAllLoaded();
-    }
-
-    public static BetterSlabs getInstance() {
-        return instance;
     }
 
     public SlabRegistry getSlabRegistry() {
@@ -140,6 +131,10 @@ public final class BetterSlabs extends JavaPlugin {
 
     public SlabManager getSlabManager() {
         return slabManager;
+    }
+
+    public String getPluginVersion() {
+        return version != null ? version : "unknown";
     }
 
     public FoliaScheduler getScheduler() {
@@ -163,6 +158,8 @@ public final class BetterSlabs extends JavaPlugin {
     }
 
     public void debug(String message) {
-        getLogger().fine(message);
+        if (getConfig().getBoolean("debug")) {
+            getLogger().info("[Debug] " + message);
+        }
     }
 }

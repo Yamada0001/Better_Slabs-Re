@@ -1,41 +1,20 @@
 package org.little100.better_slabs.model;
 
 import org.bukkit.block.BlockFace;
-import org.bukkit.util.Vector;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
+/**
+ * 半砖六面方向枚举。
+ * dx/dy/dz 及相关 getter/getDirection/isNorthSouth 已移除（全项目无调用）。
+ */
 public enum SlabFace {
-    NORTH(0, 0, -1),
-    SOUTH(0, 0, 1),
-    WEST(-1, 0, 0),
-    EAST(1, 0, 0),
-    TOP(0, 1, 0),
-    BOTTOM(0, -1, 0);
-
-    private final int dx;
-    private final int dy;
-    private final int dz;
-
-    SlabFace(int dx, int dy, int dz) {
-        this.dx = dx;
-        this.dy = dy;
-        this.dz = dz;
-    }
-
-    public int getDx() {
-        return dx;
-    }
-
-    public int getDy() {
-        return dy;
-    }
-
-    public int getDz() {
-        return dz;
-    }
-
-    public Vector getDirection() {
-        return new Vector(dx, dy, dz);
-    }
+    NORTH,
+    SOUTH,
+    WEST,
+    EAST,
+    TOP,
+    BOTTOM;
 
     public boolean isVertical() {
         return this == NORTH || this == SOUTH || this == WEST || this == EAST;
@@ -45,7 +24,7 @@ public enum SlabFace {
         return this == TOP || this == BOTTOM;
     }
 
-    public SlabFace opposite() {
+    public @NotNull SlabFace opposite() {
         return switch (this) {
             case NORTH -> SOUTH;
             case SOUTH -> NORTH;
@@ -56,11 +35,7 @@ public enum SlabFace {
         };
     }
 
-    public boolean isNorthSouth() {
-        return this == NORTH || this == SOUTH;
-    }
-
-    public static SlabFace fromBlockFace(BlockFace face) {
+    public static @Nullable SlabFace fromBlockFace(@NotNull BlockFace face) {
         return switch (face) {
             case NORTH -> NORTH;
             case SOUTH -> SOUTH;
@@ -72,12 +47,12 @@ public enum SlabFace {
         };
     }
 
-    public static SlabFace fromClickedFace(BlockFace clickedFace) {
+    public static @Nullable SlabFace fromClickedFace(@NotNull BlockFace clickedFace) {
         SlabFace face = fromBlockFace(clickedFace);
         return face == null ? null : face.opposite();
     }
 
-    public static SlabFace fromString(String name) {
+    public static @Nullable SlabFace fromString(@Nullable String name) {
         if (name == null) {
             return null;
         }

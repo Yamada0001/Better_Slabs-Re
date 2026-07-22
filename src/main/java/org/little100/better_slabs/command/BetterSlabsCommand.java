@@ -7,6 +7,7 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabCompleter;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
+import org.jetbrains.annotations.NotNull;
 import org.little100.better_slabs.BetterSlabs;
 import org.little100.better_slabs.registry.SlabRegistry;
 
@@ -20,12 +21,12 @@ public final class BetterSlabsCommand implements CommandExecutor, TabCompleter {
 
     private final BetterSlabs plugin;
 
-    public BetterSlabsCommand(BetterSlabs plugin) {
+    public BetterSlabsCommand(@NotNull BetterSlabs plugin) {
         this.plugin = plugin;
     }
 
     @Override
-    public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
+    public boolean onCommand(@NotNull CommandSender sender, @NotNull Command command, @NotNull String label, @NotNull String[] args) {
         if (!sender.hasPermission("betterslabs.admin")) {
             sender.sendMessage(plugin.getLang("command.no-permission"));
             return true;
@@ -41,7 +42,7 @@ public final class BetterSlabsCommand implements CommandExecutor, TabCompleter {
             }
             case "info" -> {
                 sender.sendMessage(plugin.getLang("command.info-version",
-                        "{version}", plugin.getPluginMeta().getVersion()));
+                        "{version}", plugin.getPluginVersion()));
                 sender.sendMessage(plugin.getLang("command.info-slab-types",
                         "{count}", String.valueOf(plugin.getSlabRegistry().getSupportedCount())));
                 sender.sendMessage(plugin.getLang("command.info-stored-cells",
@@ -67,7 +68,9 @@ public final class BetterSlabsCommand implements CommandExecutor, TabCompleter {
                 if (args.length >= 3) {
                     try {
                         amount = Math.max(1, Math.min(64, Integer.parseInt(args[2])));
-                    } catch (NumberFormatException ignored) {
+                    } catch (NumberFormatException e) {
+                        sender.sendMessage(plugin.getLang("give.invalid-amount"));
+                        return true;
                     }
                 }
                 ItemStack item = plugin.getSlabRegistry().createVerticalSlabItem(material, amount);
@@ -86,7 +89,7 @@ public final class BetterSlabsCommand implements CommandExecutor, TabCompleter {
     }
 
     @Override
-    public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
+    public List<String> onTabComplete(@NotNull CommandSender sender, @NotNull Command command, @NotNull String alias, @NotNull String[] args) {
         if (!sender.hasPermission("betterslabs.admin")) {
             return List.of();
         }

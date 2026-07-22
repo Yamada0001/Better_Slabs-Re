@@ -31,15 +31,7 @@ public final class DisplayManager {
     private final BetterSlabs plugin;
     private final Map<String, List<DisplayEntity>> displays = new ConcurrentHashMap<>();
 
-    private static final class DisplayEntity {
-        final UUID entityId;
-        final UUID worldId;
-
-        DisplayEntity(UUID entityId, UUID worldId) {
-            this.entityId = entityId;
-            this.worldId = worldId;
-        }
-    }
+    private record DisplayEntity(UUID entityId, UUID worldId) {}
 
     public DisplayManager(BetterSlabs plugin) {
         this.plugin = plugin;
@@ -109,9 +101,9 @@ public final class DisplayManager {
 
         TransformSpec spec = transformFor(half.getFace(), out, dual);
         display.setTransformation(new Transformation(
-                spec.translation,
-                spec.leftRotation,
-                spec.scale,
+                spec.translation(),
+                spec.leftRotation(),
+                spec.scale(),
                 new AxisAngle4f(0, 0, 1, 0)
         ));
         display.setInterpolationDuration(0);
@@ -134,15 +126,9 @@ public final class DisplayManager {
     
     private TransformSpec transformFor(SlabFace face, float out, boolean dual) {
         float backShift = dual ? 0f : 0.01f;
-        Vector3f scale;
+        Vector3f scale = dual ? new Vector3f(1f, 1f, 1f) : new Vector3f(1f, 1f + out, 1f);
         AxisAngle4f rot;
         Vector3f translation;
-
-        if (face.isVertical()) {
-            scale = dual ? new Vector3f(1f, 1f, 1f) : new Vector3f(1f, 1f + out, 1f);
-        } else {
-            scale = dual ? new Vector3f(1f, 1f, 1f) : new Vector3f(1f, 1f + out, 1f);
-        }
 
         switch (face) {
             case NORTH -> {
@@ -184,9 +170,9 @@ public final class DisplayManager {
         }
         for (DisplayEntity de : entities) {
             try {
-                World world = plugin.getServer().getWorld(de.worldId);
+                World world = plugin.getServer().getWorld(de.worldId());
                 if (world != null) {
-                    Entity entity = world.getEntity(de.entityId);
+                    Entity entity = world.getEntity(de.entityId());
                     if (entity != null) {
                         entity.remove();
                     }
@@ -250,13 +236,8 @@ public final class DisplayManager {
     }
 
     public void respawnChunk(World world, int chunkX, int chunkZ) {
-        for (VerticalSlabCell cell : plugin.getSlabStorage().all()) {
-            if (!cell.getWorldId().equals(world.getUID())) {
-                continue;
-            }
-            if ((cell.getX() >> 4) != chunkX || (cell.getZ() >> 4) != chunkZ) {
-                continue;
-            }
+        // 使用 chunkIndex O(1) 查找，避免全表扫描
+        for (VerticalSlabCell cell : plugin.getSlabStorage().getCellsInChunk(world.getUID(), chunkX, chunkZ)) {
             Location loc = cell.toLocation();
             if (loc == null) {
                 continue;
@@ -273,15 +254,5 @@ public final class DisplayManager {
         }
     }
 
-    private static final class TransformSpec {
-        final Vector3f translation;
-        final AxisAngle4f leftRotation;
-        final Vector3f scale;
-
-        TransformSpec(Vector3f translation, AxisAngle4f leftRotation, Vector3f scale) {
-            this.translation = translation;
-            this.leftRotation = leftRotation;
-            this.scale = scale;
-        }
-    }
+    private record TransformSpec(Vector3f translation, AxisAngle4f leftRotation, Vector3f scale) {}
 }

@@ -10,16 +10,21 @@ import org.little100.better_slabs.util.Keys;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 public final class SlabRegistry {
 
     private final BetterSlabs plugin;
     private final List<Material> ordered = new ArrayList<>();
     private final Set<Material> ignored = EnumSet.noneOf(Material.class);
+    // 缓存 resolveFullBlock 结果，避免每次调用都执行 switch + matchMaterial
+    private final Map<Material, Material> fullBlockCache = new ConcurrentHashMap<>();
 
     public SlabRegistry(BetterSlabs plugin) {
         this.plugin = plugin;
@@ -28,6 +33,7 @@ public final class SlabRegistry {
     public void scan() {
         ordered.clear();
         ignored.clear();
+        fullBlockCache.clear();
 
         for (String raw : plugin.getConfig().getStringList("ignore-slabs")) {
             if (raw == null || raw.isBlank()) {
@@ -55,7 +61,7 @@ public final class SlabRegistry {
         }
 
         found.removeIf(ignored::contains);
-        found.sort((a, b) -> a.name().compareTo(b.name()));
+        found.sort(Comparator.comparing(Material::name));
 
         for (Material material : found) {
             if (isUsableSlab(material)) {
@@ -70,15 +76,7 @@ public final class SlabRegistry {
 
     private Set<Material> collectFromVanillaTags() {
         Set<Material> out = EnumSet.noneOf(Material.class);
-        try {
-            java.lang.reflect.Field field = Tag.class.getField("ITEMS_SLABS");
-            @SuppressWarnings("unchecked")
-            Tag<Material> tag = (Tag<Material>) field.get(null);
-            if (tag != null) {
-                out.addAll(tag.getValues());
-            }
-        } catch (Throwable ignored) {
-        }
+        // 使用 Tag.SLABS 获取原版台阶方块
         try {
             if (Tag.SLABS != null) {
                 out.addAll(Tag.SLABS.getValues());
@@ -104,16 +102,8 @@ public final class SlabRegistry {
         return material != null && !material.isAir() && material.isItem() && material.isBlock();
     }
 
-    public boolean isIgnored(Material material) {
-        return material != null && ignored.contains(material);
-    }
-
     public boolean isSupported(Material material) {
         return ordered.contains(material);
-    }
-
-    public Set<Material> getSupportedMaterials() {
-        return Collections.unmodifiableSet(EnumSet.copyOf(ordered));
     }
 
     public List<Material> getOrderedMaterials() {
@@ -128,28 +118,35 @@ public final class SlabRegistry {
         if (slabMaterial == null) {
             return Material.STONE;
         }
+        // 缓存命中直接返回，避免重复计算
+        Material cached = fullBlockCache.get(slabMaterial);
+        if (cached != null) {
+            return cached;
+        }
+        Material result = doResolveFullBlock(slabMaterial);
+        fullBlockCache.put(slabMaterial, result);
+        return result;
+    }
+
+    private Material doResolveFullBlock(Material slabMaterial) {
         String name = slabMaterial.name();
         if (!name.endsWith("_SLAB")) {
             return slabMaterial;
         }
         String base = name.substring(0, name.length() - "_SLAB".length());
 
+        // 仅保留与 default (matchMaterial(base)) 有实质差异的分支
         Material special = switch (base) {
             case "OAK", "SPRUCE", "BIRCH", "JUNGLE", "ACACIA", "DARK_OAK",
                  "MANGROVE", "CHERRY", "BAMBOO", "CRIMSON", "WARPED" ->
                     Material.matchMaterial(base + "_PLANKS");
             case "PETRIFIED_OAK" -> Material.OAK_PLANKS;
-            case "STONE" -> Material.STONE;
-            case "SMOOTH_STONE" -> Material.SMOOTH_STONE;
-            case "COBBLESTONE" -> Material.COBBLESTONE;
-            case "MOSSY_COBBLESTONE" -> Material.MOSSY_COBBLESTONE;
             case "STONE_BRICK" -> Material.STONE_BRICKS;
             case "MOSSY_STONE_BRICK" -> Material.MOSSY_STONE_BRICKS;
             case "BRICK" -> Material.BRICKS;
             case "END_STONE_BRICK" -> Material.END_STONE_BRICKS;
             case "NETHER_BRICK" -> Material.NETHER_BRICKS;
             case "RED_NETHER_BRICK" -> Material.RED_NETHER_BRICKS;
-            case "SANDSTONE" -> Material.SANDSTONE;
             case "CUT_SANDSTONE" -> Material.CUT_SANDSTONE;
             case "SMOOTH_SANDSTONE" -> Material.SMOOTH_SANDSTONE;
             case "RED_SANDSTONE" -> Material.RED_SANDSTONE;
@@ -157,31 +154,20 @@ public final class SlabRegistry {
             case "SMOOTH_RED_SANDSTONE" -> Material.SMOOTH_RED_SANDSTONE;
             case "QUARTZ" -> Material.QUARTZ_BLOCK;
             case "SMOOTH_QUARTZ" -> Material.SMOOTH_QUARTZ;
-            case "PRISMARINE" -> Material.PRISMARINE;
             case "PRISMARINE_BRICK" -> Material.PRISMARINE_BRICKS;
             case "DARK_PRISMARINE" -> Material.DARK_PRISMARINE;
             case "PURPUR" -> Material.PURPUR_BLOCK;
-            case "BLACKSTONE" -> Material.BLACKSTONE;
-            case "POLISHED_BLACKSTONE" -> Material.POLISHED_BLACKSTONE;
             case "POLISHED_BLACKSTONE_BRICK" -> Material.POLISHED_BLACKSTONE_BRICKS;
-            case "CUT_COPPER", "EXPOSED_CUT_COPPER", "WEATHERED_CUT_COPPER", "OXIDIZED_CUT_COPPER",
-                 "WAXED_CUT_COPPER", "WAXED_EXPOSED_CUT_COPPER", "WAXED_WEATHERED_CUT_COPPER",
-                 "WAXED_OXIDIZED_CUT_COPPER" -> Material.matchMaterial(base);
-            case "COBBLED_DEEPSLATE" -> Material.COBBLED_DEEPSLATE;
-            case "POLISHED_DEEPSLATE" -> Material.POLISHED_DEEPSLATE;
             case "DEEPSLATE_BRICK" -> Material.DEEPSLATE_BRICKS;
             case "DEEPSLATE_TILE" -> Material.DEEPSLATE_TILES;
-            case "TUFF" -> Material.matchMaterial("TUFF");
-            case "POLISHED_TUFF" -> Material.matchMaterial("POLISHED_TUFF");
             case "TUFF_BRICK" -> Material.matchMaterial("TUFF_BRICKS");
             case "MUD_BRICK" -> Material.MUD_BRICKS;
-            case "ANDESITE" -> Material.ANDESITE;
-            case "POLISHED_ANDESITE" -> Material.POLISHED_ANDESITE;
-            case "DIORITE" -> Material.DIORITE;
-            case "POLISHED_DIORITE" -> Material.POLISHED_DIORITE;
-            case "GRANITE" -> Material.GRANITE;
-            case "POLISHED_GRANITE" -> Material.POLISHED_GRANITE;
-            case "BAMBOO_MOSAIC" -> Material.BAMBOO_MOSAIC;
+            // 以下 case 的结果与 default (matchMaterial(base)) 相同，已移除:
+            // STONE, SMOOTH_STONE, COBBLESTONE, MOSSY_COBBLESTONE, SANDSTONE,
+            // PRISMARINE, BLACKSTONE, POLISHED_BLACKSTONE, COBBLED_DEEPSLATE,
+            // POLISHED_DEEPSLATE, ANDESITE, POLISHED_ANDESITE, DIORITE,
+            // POLISHED_DIORITE, GRANITE, POLISHED_GRANITE, BAMBOO_MOSAIC,
+            // CUT_COPPER 系列, TUFF, POLISHED_TUFF
             default -> Material.matchMaterial(base);
         };
 
@@ -210,24 +196,23 @@ public final class SlabRegistry {
             return stack;
         }
         meta.getPersistentDataContainer().set(Keys.VERTICAL_SLAB, PersistentDataType.STRING, slabMaterial.name());
+        // 仅使用 Adventure API 设置 lore，不再回退到已弃用的 setLore
         try {
             java.util.List<net.kyori.adventure.text.Component> lore = plugin.getLangConfig().getStringList("item.vertical-slab-lore")
                     .stream()
                     .map(net.kyori.adventure.text.Component::text)
                     .collect(java.util.stream.Collectors.toList());
             meta.lore(lore);
-        } catch (Throwable t) {
-            try {
-                meta.setLore(plugin.getLangConfig().getStringList("item.vertical-slab-lore"));
-            } catch (Throwable ignored) {}
+        } catch (Throwable ignored) {
         }
+        // 附魔光效，处理 getByKey 可能返回 null
         try {
-            meta.addEnchant(org.bukkit.enchantments.Enchantment.DURABILITY, 1, true);
-        } catch (Throwable t) {
-            try {
-                meta.addEnchant(org.bukkit.enchantments.Enchantment.getByKey(
-                        org.bukkit.NamespacedKey.minecraft("unbreaking")), 1, true);
-            } catch (Throwable ignored) {}
+            org.bukkit.enchantments.Enchantment unbreaking = org.bukkit.enchantments.Enchantment.getByKey(
+                    org.bukkit.NamespacedKey.minecraft("unbreaking"));
+            if (unbreaking != null) {
+                meta.addEnchant(unbreaking, 1, true);
+            }
+        } catch (Throwable ignored) {
         }
         meta.addItemFlags(org.bukkit.inventory.ItemFlag.HIDE_ENCHANTS);
         stack.setItemMeta(meta);

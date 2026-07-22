@@ -18,6 +18,12 @@ import java.util.List;
 
 public final class WorldProtectListener implements Listener {
 
+    // 提取为静态常量，避免每次调用都新建数组
+    private static final BlockFace[] ALL_FACES = {
+            BlockFace.NORTH, BlockFace.SOUTH, BlockFace.EAST, BlockFace.WEST,
+            BlockFace.UP, BlockFace.DOWN
+    };
+
     private final BetterSlabs plugin;
 
     public WorldProtectListener(BetterSlabs plugin) {
@@ -74,7 +80,7 @@ public final class WorldProtectListener implements Listener {
             if (isManaged(block)) {
                 return true;
             }
-            for (BlockFace face : new BlockFace[]{BlockFace.NORTH, BlockFace.SOUTH, BlockFace.EAST, BlockFace.WEST, BlockFace.UP, BlockFace.DOWN}) {
+            for (BlockFace face : ALL_FACES) {
                 if (isManaged(block.getRelative(face))) {
                     return true;
                 }

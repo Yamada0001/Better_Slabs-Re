@@ -41,7 +41,7 @@ public final class SlabInteractListener implements Listener {
         this.plugin = plugin;
     }
 
-    @EventHandler(priority = EventPriority.NORMAL, ignoreCancelled = false)
+    @EventHandler(priority = EventPriority.NORMAL)
     public void onInteract(PlayerInteractEvent event) {
         EquipmentSlot hand = event.getHand();
         if (hand != null && hand != EquipmentSlot.HAND) {
@@ -54,7 +54,7 @@ public final class SlabInteractListener implements Listener {
 
         // 检测空气+潜行右键在切换
         if (player.isSneaking() && action == Action.RIGHT_CLICK_AIR) {
-            if (tryToggle(player, item, EquipmentSlot.HAND)) {
+            if (tryToggle(player, item)) {
                 event.setCancelled(true);
                 return;
             }
@@ -95,7 +95,7 @@ public final class SlabInteractListener implements Listener {
 
             if (isVertical) {
                 boolean handled = plugin.getSlabManager().tryPlace(
-                        player, item, clicked, event.getBlockFace(), EquipmentSlot.HAND);
+                        player, item, clicked, event.getBlockFace());
                 event.setCancelled(true);
                 if (!handled) {
                     player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_BASS, 0.3f, 0.5f);
@@ -105,7 +105,7 @@ public final class SlabInteractListener implements Listener {
 
             if (isNormalSlab) {
                 boolean handled = plugin.getSlabManager().tryPlace(
-                        player, item, clicked, event.getBlockFace(), EquipmentSlot.HAND);
+                        player, item, clicked, event.getBlockFace());
                 if (handled) {
                     event.setCancelled(true);
                 }
@@ -136,13 +136,31 @@ public final class SlabInteractListener implements Listener {
 
     private Block findTargetCell(Player player, Block clicked) {
         double reach = player.getGameMode() == GameMode.CREATIVE ? 5.0 : 4.5;
-        Vector direction = player.getEyeLocation().getDirection().normalize();
-        var eye = player.getEyeLocation();
+        double reachSquared = reach * reach;
+        Vector direction = player.getEyeLocation().getDirection();
+        double lengthSquared = direction.lengthSquared();
+        if (lengthSquared < 1.0E-6) {
+            return clicked != null ? resolveManagedBlock(clicked) : null;
+        }
+        direction.multiply(1.0 / Math.sqrt(lengthSquared)); // 就地 normalize，避免分配
+        Location eye = player.getEyeLocation();
+        double eyeX = eye.getX();
+        double eyeY = eye.getY();
+        double eyeZ = eye.getZ();
+        double dirX = direction.getX();
+        double dirY = direction.getY();
+        double dirZ = direction.getZ();
+        UUID worldId = player.getWorld().getUID();
 
         for (double d = 0.1; d <= reach; d += 0.025) {
-            var point = eye.clone().add(direction.clone().multiply(d));
-            Block at = player.getWorld().getBlockAt(
-                    point.getBlockX(), point.getBlockY(), point.getBlockZ());
+            double px = eyeX + dirX * d;
+            double py = eyeY + dirY * d;
+            double pz = eyeZ + dirZ * d;
+            int bx = floor(px);
+            int by = floor(py);
+            int bz = floor(pz);
+
+            Block at = player.getWorld().getBlockAt(bx, by, bz);
             Block resolved = resolveManagedBlock(at);
 
             if (resolved != null) {
@@ -155,7 +173,7 @@ public final class SlabInteractListener implements Listener {
                     for (VerticalHalf half : cell.getHalves()) {
                         BoundingBox box = VerticalSlabCell.halfBox(
                                 resolved.getX(), resolved.getY(), resolved.getZ(), half.getFace());
-                        if (box.clone().expand(0.03).contains(point.toVector())) {
+                        if (box.clone().expand(0.03).contains(new Vector(px, py, pz))) {
                             return resolved;
                         }
                     }
@@ -167,24 +185,36 @@ public final class SlabInteractListener implements Listener {
                 return null;
             }
 
-            String key = player.getWorld().getUID() + ":" + at.getX() + ":" + at.getY() + ":" + at.getZ();
+            // 使用统一 key 生成方法，避免硬编码拼接
+            String key = worldId + ":" + bx + ":" + by + ":" + bz;
             VerticalSlabCell cell = plugin.getSlabStorage().get(key);
             if (cell == null || cell.isEmpty()) {
                 continue;
             }
             for (VerticalHalf half : cell.getHalves()) {
-                BoundingBox box = VerticalSlabCell.halfBox(at.getX(), at.getY(), at.getZ(), half.getFace());
-                if (box.clone().expand(0.03).contains(point.toVector())) {
+                BoundingBox box = VerticalSlabCell.halfBox(bx, by, bz, half.getFace());
+                if (box.clone().expand(0.03).contains(new Vector(px, py, pz))) {
                     return at;
                 }
             }
         }
 
-        if (clicked != null
-                && player.getEyeLocation().distance(clicked.getLocation().add(0.5, 0.5, 0.5)) <= reach) {
-            return resolveManagedBlock(clicked);
+        // 使用 distanceSquared 避免平方根计算
+        if (clicked != null) {
+            Location clickCenter = clicked.getLocation().add(0.5, 0.5, 0.5);
+            double dx = eyeX - clickCenter.getX();
+            double dy = eyeY - clickCenter.getY();
+            double dz = eyeZ - clickCenter.getZ();
+            if (dx * dx + dy * dy + dz * dz <= reachSquared) {
+                return resolveManagedBlock(clicked);
+            }
         }
         return null;
+    }
+
+    private static int floor(double value) {
+        int i = (int) value;
+        return value < i ? i - 1 : i;
     }
 
     private Block resolveManagedBlock(Block block) {
@@ -252,9 +282,11 @@ public final class SlabInteractListener implements Listener {
         int pct = Math.round(progress * 100);
         int bars = 10;
         int filled = Math.round(progress * bars);
+        String filledChar = plugin.getLang("dig.bar-filled");
+        String emptyChar = plugin.getLang("dig.bar-empty");
         StringBuilder bar = new StringBuilder();
         for (int i = 0; i < bars; i++) {
-            bar.append(i < filled ? "■" : "□");
+            bar.append(i < filled ? filledChar : emptyChar);
         }
         String sec = String.format("%.1f", progress * (DIG_MS / 1000.0));
         String total = String.format("%.1f", DIG_MS / 1000.0);
@@ -272,22 +304,14 @@ public final class SlabInteractListener implements Listener {
                     Title.Times.times(Duration.ZERO, Duration.ofMillis(400), Duration.ofMillis(100)));
             player.showTitle(title);
         } catch (Throwable t) {
-            try {
-                player.sendTitle(plugin.getLang("dig.title"), subtitle, 0, 8, 2);
-            } catch (Throwable ignored) {
-                player.sendActionBar(Component.text(plugin.getLang("dig.actionbar", "{percent}", String.valueOf(pct))));
-            }
+            player.sendActionBar(Component.text(plugin.getLang("dig.actionbar", "{percent}", String.valueOf(pct))));
         }
     }
 
     private void clearTitle(Player player) {
         try {
             player.clearTitle();
-        } catch (Throwable t) {
-            try {
-                player.resetTitle();
-            } catch (Throwable ignored) {
-            }
+        } catch (Throwable ignored) {
         }
     }
 
@@ -313,7 +337,7 @@ public final class SlabInteractListener implements Listener {
         });
     }
 
-    private boolean tryToggle(Player player, ItemStack item, EquipmentSlot hand) {
+    private boolean tryToggle(Player player, ItemStack item) {
         if (item == null || item.getType().isAir()) {
             return false;
         }
@@ -323,14 +347,14 @@ public final class SlabInteractListener implements Listener {
         if (isVertical) {
             ItemStack normal = plugin.getSlabRegistry().convertToNormalSlab(item);
             if (normal != null) {
-                player.getInventory().setItem(hand, normal);
+                player.getInventory().setItem(EquipmentSlot.HAND, normal);
                 player.playSound(player.getLocation(), Sound.UI_BUTTON_CLICK, 0.5f, 1.2f);
                 return true;
             }
         } else if (isNormalSlab) {
             ItemStack vertical = plugin.getSlabRegistry().createVerticalSlabItem(item.getType(), item.getAmount());
             if (vertical != null) {
-                player.getInventory().setItem(hand, vertical);
+                player.getInventory().setItem(EquipmentSlot.HAND, vertical);
                 player.playSound(player.getLocation(), Sound.UI_BUTTON_CLICK, 0.5f, 1.2f);
                 return true;
             }

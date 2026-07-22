@@ -8,7 +8,6 @@ import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
 import org.bukkit.block.data.type.Slab;
 import org.bukkit.entity.Player;
-import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
 import org.little100.better_slabs.BetterSlabs;
 import org.little100.better_slabs.model.SlabFace;
@@ -26,7 +25,7 @@ public final class SlabManager {
         this.plugin = plugin;
     }
 
-    public boolean tryPlace(Player player, ItemStack hand, Block clicked, BlockFace clickedFace, EquipmentSlot slot) {
+    public boolean tryPlace(Player player, ItemStack hand, Block clicked, BlockFace clickedFace) {
         if (player == null || hand == null || clicked == null || clickedFace == null) {
             return false;
         }
@@ -94,22 +93,18 @@ public final class SlabManager {
     }
 
     private SlabFace horizontalLook(Player player) {
-        SlabFace face = SlabFace.fromBlockFace(player.getFacing());
-        if (face == null || !face.isVertical()) {
-            float yaw = player.getLocation().getYaw();
-            yaw = (yaw % 360 + 360) % 360;
-            if (yaw >= 315 || yaw < 45) {
-                return SlabFace.SOUTH;
-            }
-            if (yaw < 135) {
-                return SlabFace.WEST;
-            }
-            if (yaw < 225) {
-                return SlabFace.NORTH;
-            }
-            return SlabFace.EAST;
+        float yaw = player.getLocation().getYaw();
+        yaw = (yaw % 360 + 360) % 360;
+        if (yaw >= 315 || yaw < 45) {
+            return SlabFace.SOUTH;
         }
-        return face;
+        if (yaw < 135) {
+            return SlabFace.WEST;
+        }
+        if (yaw < 225) {
+            return SlabFace.NORTH;
+        }
+        return SlabFace.EAST;
     }
 
     private boolean placeAt(Player player, ItemStack hand, Block target, SlabFace face, Material slabMaterial) {
@@ -123,13 +118,13 @@ public final class SlabManager {
         if (existing == null) {
             Material type = target.getType();
             if (!type.isAir()) {
-                if (type == Material.PLAYER_HEAD || type == Material.PLAYER_WALL_HEAD) {
-                    // 本格头颅可覆盖
-                } else if (type.name().endsWith("_SLAB") && target.getBlockData() instanceof Slab slab && slab.getType() != Slab.Type.DOUBLE) {
-                    // 原版半砖可覆盖
-                } else if (type == Material.BARRIER && plugin.getCollisionManager().isManagedHost(target)) {
-                    // 屏障托管
-                } else {
+                boolean isHead = type == Material.PLAYER_HEAD || type == Material.PLAYER_WALL_HEAD;
+                boolean isSingleSlab = type.name().endsWith("_SLAB")
+                        && target.getBlockData() instanceof Slab slab
+                        && slab.getType() != Slab.Type.DOUBLE;
+                boolean isManagedBarrier = type == Material.BARRIER
+                        && plugin.getCollisionManager().isManagedHost(target);
+                if (!isHead && !isSingleSlab && !isManagedBarrier) {
                     return false;
                 }
             }
@@ -138,11 +133,19 @@ public final class SlabManager {
         VerticalSlabCell cell = existing != null ? existing : new VerticalSlabCell(target.getLocation());
         VerticalHalf half = new VerticalHalf(slabMaterial, face);
 
-        if (!cell.canAdd(half)) {
-            return true;
+        // addHalf 内部已做 canAdd 校验，成功则执行放置，失败则直接结束
+        if (cell.addHalf(half)) {
+            return finalizePlacement(player, hand, target, cell, half);
         }
 
-        cell.addHalf(half);
+        return true;
+    }
+
+    /**
+     * 提取公共的放置收尾逻辑：持久化、消耗物品、刷新世界状态、播放音效
+     */
+    private boolean finalizePlacement(Player player, ItemStack hand, Block target,
+                                      VerticalSlabCell cell, VerticalHalf half) {
         plugin.getSlabStorage().put(cell);
 
         if (player.getGameMode() != GameMode.CREATIVE) {
@@ -177,18 +180,10 @@ public final class SlabManager {
             VerticalSlabCell cell = new VerticalSlabCell(clicked.getLocation());
             cell.forceAddHalf(new VerticalHalf(existingMat, existingFace));
             VerticalHalf half = new VerticalHalf(slabMaterial, newFace);
-            if (!cell.canAdd(half)) {
-                return false;
+            if (cell.addHalf(half)) {
+                return finalizePlacement(player, hand, clicked, cell, half);
             }
-            cell.addHalf(half);
-            plugin.getSlabStorage().put(cell);
-
-            if (player.getGameMode() != GameMode.CREATIVE) {
-                hand.setAmount(hand.getAmount() - 1);
-            }
-            applyWorldState(cell);
-            player.playSound(clicked.getLocation(), Sound.BLOCK_STONE_PLACE, 1f, 1.05f);
-            return true;
+            return false;
         }
 
         String key = VerticalSlabCell.keyOf(clicked.getLocation());
@@ -220,9 +215,9 @@ public final class SlabManager {
         plugin.getDisplayManager().refresh(stored);
     }
 
-    public boolean tryBreak(Player player, Block block) {
+    public void tryBreak(Player player, Block block) {
         if (block == null) {
-            return false;
+            return;
         }
         String key = VerticalSlabCell.keyOf(block.getLocation());
         String fromHead = plugin.getCollisionManager().cellKeyFromHead(block);
@@ -238,7 +233,7 @@ public final class SlabManager {
         }
         VerticalSlabCell cell = plugin.getSlabStorage().get(key);
         if (cell == null || cell.isEmpty()) {
-            return false;
+            return;
         }
         List<ItemStack> drops = new ArrayList<>(2);
         boolean wasVertical = cell.isVerticalCell();
@@ -270,13 +265,5 @@ public final class SlabManager {
         if (player != null) {
             player.playSound(block.getLocation(), Sound.BLOCK_STONE_BREAK, 1f, 1f);
         }
-        return true;
-    }
-
-    public boolean isManaged(Block block) {
-        if (block == null) {
-            return false;
-        }
-        return plugin.getSlabStorage().get(VerticalSlabCell.keyOf(block.getLocation())) != null || plugin.getCollisionManager().isManagedHost(block);
     }
 }

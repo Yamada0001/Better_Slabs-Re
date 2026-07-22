@@ -75,10 +75,9 @@ public final class CollisionManager {
         clearHeadSync(cell.key(), block);
         hostKeys.remove(cell.key());
         Material type = block.getType();
-        if (type == Material.BARRIER || type.name().endsWith("_SLAB")|| type == Material.PLAYER_HEAD || type == Material.PLAYER_WALL_HEAD|| !type.isAir()) {
-            if (type != Material.AIR) {
-                block.setType(Material.AIR, false);
-            }
+        // 单半砖场景：清除原占位方块（屏障/头颅/原版半砖/其它非空气方块）
+        if (type != Material.AIR) {
+            block.setType(Material.AIR, false);
         }
         placeHeadForSingle(cell);
     }
@@ -159,7 +158,6 @@ public final class CollisionManager {
     }
 
     private void clearHeadForCell(String cellKey) {
-        clearHeadSync(cellKey, null);
         String headKey = headBlockKeys.remove(cellKey);
         if (headKey == null) {
             return;
@@ -201,17 +199,6 @@ public final class CollisionManager {
                 block.setType(Material.AIR, false);
             }
         } catch (Exception ignored) {
-        }
-    }
-
-    public void clearHost(String key, Block block) {
-        if (key != null) {
-            hostKeys.remove(key);
-            clearHeadForCell(key);
-        }
-        if (block != null) {
-            Location loc = block.getLocation();
-            plugin.getScheduler().runAt(loc, () -> clearHostLocal(key, block));
         }
     }
 

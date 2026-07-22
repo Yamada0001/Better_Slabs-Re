@@ -1,5 +1,6 @@
 package org.little100.better_slabs.listener;
 
+import org.bukkit.Location;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
@@ -20,8 +21,10 @@ public final class ChunkListener implements Listener {
     public void onChunkLoad(ChunkLoadEvent event) {
         int cx = event.getChunk().getX();
         int cz = event.getChunk().getZ();
+        // 直接用世界+坐标构造 Location，避免 getBlockAt 创建中间对象
+        Location chunkLoc = new Location(event.getWorld(), cx << 4, 64, cz << 4);
         plugin.getScheduler().runAt(
-                event.getWorld().getBlockAt(cx << 4, 64, cz << 4).getLocation(),
+                chunkLoc,
                 () -> plugin.getDisplayManager().respawnChunk(event.getWorld(), cx, cz)
         );
     }
